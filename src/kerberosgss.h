@@ -92,11 +92,12 @@ int authenticate_gss_server_has_delegated(
 
 int encrypt_message(
     gss_client_state *state, char *message_input,
-    char **encrypted_output, int *encrypted_output_length
+    char **header, int *header_len,
+    char **encrypted_data, int *encrypted_data_len
 );
 
 int decrypt_message(
-    gss_client_state *state, char *encrypted_input,
-    int encrypted_length, char **decrypted_output,
-    int *decrypted_output_len
+    gss_client_state *state, char *header, int header_len,
+    char *data, int data_len,
+    char **decrypted_output, int *decrypted_output_len
 );

@@ -1006,30 +1006,25 @@ end:
     return ret;
 }
 
-int encrypt_message_works(gss_client_state *state, char *message_input, char **encrypted_output, int *encrypted_output_length) {
+int encrypt_message(
+        gss_client_state *state, char *message_input,
+        char **header, int *header_len,
+        char **encrypted_data, int *encrypted_data_len
+) {
     OM_uint32 maj_stat;
     OM_uint32 min_stat;
-    OM_uint32 ctx_flags;
-    int local;
-    int open;
     int ret;
     char *outloc = NULL;
 
-    // ensure that the context is valid and open
-    maj_stat = gss_inquire_context(&min_stat, state->context, NULL, NULL, NULL, NULL, &ctx_flags, &local, &open);
-
-    gss_iov_buffer_desc iov[4];
+    gss_iov_buffer_desc iov[3];
     iov[0].type = GSS_IOV_BUFFER_TYPE_HEADER | GSS_IOV_BUFFER_FLAG_ALLOCATE;
     iov[1].type = GSS_IOV_BUFFER_TYPE_DATA;
-    // TODO: copy the input buffer so we aren't mutating the original Python string
+    // NB: this will modify the message buffer in place, ensure caller has copied the string if necessary
     iov[1].buffer.value = message_input;
     iov[1].buffer.length = strlen(message_input);
     iov[2].type = GSS_IOV_BUFFER_TYPE_PADDING | GSS_IOV_BUFFER_FLAG_ALLOCATE;
-    // TODO: do we need/want trailer?
-    iov[3].type = GSS_IOV_BUFFER_TYPE_TRAILER | GSS_IOV_BUFFER_FLAG_ALLOCATE;
 
     maj_stat = gss_wrap_iov(&min_stat, state->context, 1, GSS_C_QOP_DEFAULT, NULL, iov, 3);
-
 
     if (GSS_ERROR(maj_stat)) {
         set_gss_error(maj_stat, min_stat);
@@ -1037,105 +1032,48 @@ int encrypt_message_works(gss_client_state *state, char *message_input, char **e
         goto end;
     }
 
-    // TODO: copy the iov buffer so we can make the caller responsible to free it
+    *header_len = iov[0].buffer.length;
+    *header = malloc(*header_len);
+    memcpy(*header, iov[0].buffer.value, *header_len);
 
-    // assemble output message in format {(uint)header_length}{header}{data}{padding}
-    *encrypted_output_length = sizeof(unsigned int) + iov[0].buffer.length + iov[1].buffer.length + iov[2].buffer.length;
-    *encrypted_output = malloc(*encrypted_output_length);
-    outloc = *encrypted_output;
-
-    outloc = mempcpy(outloc, &(iov[0].buffer.length), sizeof(unsigned int));
-    outloc = mempcpy(outloc, iov[0].buffer.value, iov[0].buffer.length);
+    // copy encrypted data, concatenate padding buffer if present
+    *encrypted_data_len = iov[1].buffer.length + iov[2].buffer.length;
+    *encrypted_data = malloc(*encrypted_data_len);
+    outloc = *encrypted_data;
     outloc = mempcpy(outloc, iov[1].buffer.value, iov[1].buffer.length);
-    // NB: this will no-op if no padding is necessary
-    outloc = mempcpy(outloc, iov[2].buffer.value, iov[2].buffer.length);
-    // TODO: trailer may not be necessary?
-    // outloc = mempcpy(outloc, iov[3].buffer.value, iov[3].buffer.length);
+    // NB: no-op if no padding is necessary (which seems to always be the case with aes256-cts-hmac-sha1-96)
+    mempcpy(outloc, iov[2].buffer.value, iov[2].buffer.length);
 
     ret = 0;
 end:
-
-    return ret;
-    // TODO: free buffers, check status codes, check for memory leaks
-
-
-}
-
-int encrypt_message(gss_client_state *state, char *message_input, char **encrypted_output, int *encrypted_output_length) {
-    OM_uint32 maj_stat;
-    OM_uint32 min_stat;
-    OM_uint32 ctx_flags;
-    int local;
-    int open;
-    int ret;
-    char *outloc = NULL;
-
-    // ensure that the context is valid and open
-    maj_stat = gss_inquire_context(&min_stat, state->context, NULL, NULL, NULL, NULL, &ctx_flags, &local, &open);
-
-    gss_iov_buffer_desc iov[3];
-    iov[0].type = GSS_IOV_BUFFER_TYPE_HEADER | GSS_IOV_BUFFER_FLAG_ALLOCATE;
-    iov[1].type = GSS_IOV_BUFFER_TYPE_DATA;
-    iov[1].buffer.value = message_input;
-    iov[1].buffer.length = strlen(message_input);
-    iov[2].type = GSS_IOV_BUFFER_TYPE_PADDING | GSS_IOV_BUFFER_FLAG_ALLOCATE;
-
-    maj_stat = gss_wrap_iov(&min_stat, state->context, 1, GSS_C_QOP_DEFAULT, NULL, iov, 3);
-
-
-    if (GSS_ERROR(maj_stat)) {
-        set_gss_error(maj_stat, min_stat);
-        ret = AUTH_GSS_ERROR;
-        goto end;
-    }
-
-    // assemble output message in format {(uint)header_length}{header}{data}{padding}
-    *encrypted_output_length = sizeof(unsigned int) + iov[0].buffer.length + iov[1].buffer.length + iov[2].buffer.length;
-    *encrypted_output = malloc(*encrypted_output_length);
-    outloc = *encrypted_output;
-
-    outloc = mempcpy(outloc, &(iov[0].buffer.length), sizeof(unsigned int));
-    outloc = mempcpy(outloc, iov[0].buffer.value, iov[0].buffer.length);
-    outloc = mempcpy(outloc, iov[1].buffer.value, iov[1].buffer.length);
-    // NB: this will no-op if no padding is necessary
-    outloc = mempcpy(outloc, iov[2].buffer.value, iov[2].buffer.length);
-
     maj_stat = gss_release_iov_buffer(&min_stat, iov, 3);
 
-    ret = 0;
-    end:
-
     return ret;
-    // TODO: free buffers, check status codes, check for memory leaks
-
-
 }
 
 
-int decrypt_message(gss_client_state *state, char *encrypted_input, int encrypted_length, char **decrypted_output, int *decrypted_output_len) {
+int decrypt_message(
+    gss_client_state *state, char *header, int header_len,
+    char *data, int data_len,
+    char **decrypted_output, int *decrypted_output_len
+) {
     OM_uint32 maj_stat;
     OM_uint32 min_stat;
-    int ret;
+    int ret = 0;
     int conf_state;
     gss_qop_t qop_state;
 
-    unsigned int header_len = ((unsigned int*)encrypted_input)[0];
-    void *header_start = &((unsigned int*)encrypted_input)[1];
-    void *data_start = header_start + header_len;
-
-    // TODO: copy the python input buffer so we're not mutating somebody else's string
+    // NB: ensure the caller has copied the python input buffer
+    // so we're not mutating somebody else's string
 
     gss_iov_buffer_desc iov[3];
     iov[0].type = GSS_IOV_BUFFER_TYPE_HEADER;
-    iov[0].buffer.value = header_start;
+    iov[0].buffer.value = header;
     iov[0].buffer.length = header_len;
 
     iov[1].type = GSS_IOV_BUFFER_TYPE_DATA;
-    iov[1].buffer.value = data_start;
-    iov[1].buffer.length = encrypted_length - sizeof(unsigned int) - header_len;
-    iov[2].type = GSS_IOV_BUFFER_TYPE_DATA | GSS_IOV_BUFFER_FLAG_ALLOCATE;
-    // TODO: do we need/want trailer?
-    //iov[3].type = GSS_IOV_BUFFER_TYPE_TRAILER | GSS_IOV_BUFFER_FLAG_ALLOCATE;
+    iov[1].buffer.value = data;
+    iov[1].buffer.length = data_len;
 
     maj_stat = gss_unwrap_iov(&min_stat, state->context, &conf_state, &qop_state, iov, 2);
 
@@ -1145,18 +1083,13 @@ int decrypt_message(gss_client_state *state, char *encrypted_input, int encrypte
         goto end;
     }
 
-    // TODO: copy the iov buffer so we can make the caller responsible to free it
-
-    *decrypted_output = (char*)iov[1].buffer.value;
+    *decrypted_output = malloc(iov[1].buffer.length);
     *decrypted_output_len = iov[1].buffer.length;
 
-    maj_stat = gss_release_iov_buffer(&min_stat, iov, 3);
+    memcpy(*decrypted_output, iov[1].buffer.value, iov[1].buffer.length);
 
     ret = 0;
-    end:
-
+end:
+    maj_stat = gss_release_iov_buffer(&min_stat, iov, 3);
     return ret;
-    // TODO: free buffers, check status codes, check for memory leaks
-
-
 }

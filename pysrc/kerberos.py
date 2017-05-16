@@ -137,20 +137,26 @@ GSS_C_ANON_FLAG       = 64
 GSS_C_PROT_READY_FLAG = 128
 GSS_C_TRANS_FLAG      = 256
 
-def authGSSEncryptMessage(context, input):
+def authGSSEncryptMessage(context, message):
     """
-    
-    :param context: 
-    :param input: 
-    :return: 
+    Encrypts a message body with the current Kerberos session key (eg, WinRM)
+     
+    @param context: The context object returned from L{authGSSClientInit}.
+    @param message: The plaintext message to be encrypted. 
+    @return: A tuple of (encrypted_data, header) where encrypted_data is the 
+        ciphertext result of the encryption operation, and header is the GSSAPI
+        header describing the encryption parameters. Both strings contain opaque
+        binary data.
     """
 
-def authGSSDecryptMessage(context, input):
+def authGSSDecryptMessage(context, encrypted_data, header):
     """
-    
-    :param context: 
-    :param input: 
-    :return: 
+    Decrypts a ciphertext message body with the current Kerberos session key (eg, WinRM)
+     
+    @param context: The context object returned from L{authGSSClientInit}.
+    @param encrypted_data: The ciphertext message to be decrypted.
+    @param header: The GSSAPI message header containing the encryption parameters.
+    @return: The decrypted message text.
     """
 
 def authGSSClientInit(service, **kwargs):

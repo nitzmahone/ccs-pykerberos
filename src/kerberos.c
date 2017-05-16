@@ -403,6 +403,8 @@ static PyObject *authGSSClientWrap(PyObject *self, PyObject *args)
 static PyObject* authGSSEncryptMessage(PyObject* self, PyObject* args)
 {
     char *input = NULL;
+    char *header = NULL;
+    int header_len = 0;
     char *enc_output = NULL;
     int enc_output_len = 0;
     PyObject *pystate = NULL;
@@ -413,64 +415,108 @@ static PyObject* authGSSEncryptMessage(PyObject* self, PyObject* args)
     // NB: use et so we get a copy of the string (since gss_wrap_iov mutates it), and so we're certain it's always
     // a UTF8 byte string
     if (! PyArg_ParseTuple(args, "Oet", &pystate, "UTF-8", &input)) {
-        return NULL;
+        pyresult = NULL;
+        goto end;
     }
 
     if (!PyCObject_Check(pystate)) {
         PyErr_SetString(PyExc_TypeError, "Expected a context object");
-        return NULL;
+        pyresult = NULL;
+        goto end;
     }
 
     state = (gss_client_state *)PyCObject_AsVoidPtr(pystate);
     if (state == STATE_NULL) {
-        return NULL;
+        pyresult = NULL;
+        goto end;
     }
 
-    result = encrypt_message(state, input, &enc_output, &enc_output_len);
+    result = encrypt_message(state, input, &header, &header_len, &enc_output, &enc_output_len);
 
     if (result == AUTH_GSS_ERROR) {
-        return NULL;
+        pyresult = NULL;
+        goto end;
     }
 
-    pyresult = Py_BuildValue("s#", enc_output, enc_output_len);
-
-    PyMem_Free(input);
-    free(enc_output);
+    pyresult = Py_BuildValue("s# s#", enc_output, enc_output_len, header, header_len);
+end:
+    if (input) {
+        PyMem_Free(input);
+    }
+    if (header) {
+        free(header);
+    }
+    if (enc_output) {
+        free(enc_output);
+    }
 
     return pyresult;
 }
 
 static PyObject* authGSSDecryptMessage(PyObject* self, PyObject* args)
 {
-    char *enc_input = NULL;
-    int enc_input_len = 0;
+    char *header = NULL;
+    int header_len = 0;
+    char *enc_data = NULL;
+    int enc_data_len = 0;
     PyObject *pystate = NULL;
+    PyObject *pyheader = NULL;
+    PyObject *pyenc_data = NULL;
     gss_client_state *state = NULL;
     char *dec_output = NULL;
     int dec_output_len = 0;
     int result = 0;
+    PyObject *pyresult = 0;
 
-    if (! PyArg_ParseTuple(args, "Os#", &pystate, &enc_input, &enc_input_len)) {
-        return NULL;
+    // NB: since the sig/data strings are arbitrary binary and don't conform to
+    // a valid encoding, none of the normal string marshaling types will work. We'll
+    // have to extract the data later.
+    if (! PyArg_ParseTuple(args, "OOO", &pystate, &pyenc_data, &pyheader)) {
+        pyresult = NULL;
+        goto end;
     }
 
     if (!PyCObject_Check(pystate)) {
         PyErr_SetString(PyExc_TypeError, "Expected a context object");
-        return NULL;
+        pyresult = NULL;
+        goto end;
     }
 
     state = (gss_client_state *)PyCObject_AsVoidPtr(pystate);
     if (state == STATE_NULL) {
-        return NULL;
+        pyresult = NULL;
+        goto end;
     }
 
-    result = decrypt_message(state, enc_input, enc_input_len, &dec_output, &dec_output_len);
+    // request the length and copy the header and encrypted input data from the Python strings
+    header_len = (int) PyString_Size(pyheader);
+    header = malloc(header_len);
+    memcpy(header, PyString_AS_STRING(pyheader), header_len);
+
+    enc_data_len = (int) PyString_Size(pyenc_data);
+    enc_data = malloc(enc_data_len);
+    memcpy(enc_data, PyString_AS_STRING(pyenc_data), enc_data_len);
+
+    result = decrypt_message(state, header, header_len, enc_data, enc_data_len, &dec_output, &dec_output_len);
 
     if (result == AUTH_GSS_ERROR) {
-        return NULL;
+        pyresult = NULL;
+        goto end;
     }
 
-    return Py_BuildValue("s#", dec_output, dec_output_len);
+    pyresult = Py_BuildValue("s#", dec_output, dec_output_len);
+end:
+    if (header) {
+        PyMem_Free(header);
+    }
+    if (enc_data) {
+        PyMem_Free(enc_data);
+    }
+    if (dec_output) {
+        free(dec_output);
+    }
+
+    return pyresult;
 }
 
 
