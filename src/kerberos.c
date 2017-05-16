@@ -400,6 +400,80 @@ static PyObject *authGSSClientWrap(PyObject *self, PyObject *args)
 	return Py_BuildValue("i", result);
 }
 
+static PyObject* authGSSEncryptMessage(PyObject* self, PyObject* args)
+{
+    char *input = NULL;
+    char *enc_output = NULL;
+    int enc_output_len = 0;
+    PyObject *pystate = NULL;
+    gss_client_state *state = NULL;
+    int result = 0;
+    PyObject *pyresult = NULL;
+
+    // NB: use et so we get a copy of the string (since gss_wrap_iov mutates it), and so we're certain it's always
+    // a UTF8 byte string
+    if (! PyArg_ParseTuple(args, "Oet", &pystate, "UTF-8", &input)) {
+        return NULL;
+    }
+
+    if (!PyCObject_Check(pystate)) {
+        PyErr_SetString(PyExc_TypeError, "Expected a context object");
+        return NULL;
+    }
+
+    state = (gss_client_state *)PyCObject_AsVoidPtr(pystate);
+    if (state == STATE_NULL) {
+        return NULL;
+    }
+
+    result = encrypt_message(state, input, &enc_output, &enc_output_len);
+
+    if (result == AUTH_GSS_ERROR) {
+        return NULL;
+    }
+
+    pyresult = Py_BuildValue("s#", enc_output, enc_output_len);
+
+    PyMem_Free(input);
+    free(enc_output);
+
+    return pyresult;
+}
+
+static PyObject* authGSSDecryptMessage(PyObject* self, PyObject* args)
+{
+    char *enc_input = NULL;
+    int enc_input_len = 0;
+    PyObject *pystate = NULL;
+    gss_client_state *state = NULL;
+    char *dec_output = NULL;
+    int dec_output_len = 0;
+    int result = 0;
+
+    if (! PyArg_ParseTuple(args, "Os#", &pystate, &enc_input, &enc_input_len)) {
+        return NULL;
+    }
+
+    if (!PyCObject_Check(pystate)) {
+        PyErr_SetString(PyExc_TypeError, "Expected a context object");
+        return NULL;
+    }
+
+    state = (gss_client_state *)PyCObject_AsVoidPtr(pystate);
+    if (state == STATE_NULL) {
+        return NULL;
+    }
+
+    result = decrypt_message(state, enc_input, enc_input_len, &dec_output, &dec_output_len);
+
+    if (result == AUTH_GSS_ERROR) {
+        return NULL;
+    }
+
+    return Py_BuildValue("s#", dec_output, dec_output_len);
+}
+
+
 static PyObject *authGSSClientInquireCred(PyObject *self, PyObject *args)
 {
     gss_client_state *state = NULL;
@@ -650,6 +724,17 @@ static PyMethodDef KerberosMethods[] = {
         "getServerPrincipalDetails",
         getServerPrincipalDetails, METH_VARARGS,
         "Return the service principal for a given service and hostname."
+    },
+    {
+        "authGSSEncryptMessage",
+        authGSSEncryptMessage, METH_VARARGS,
+        "Encrypt a message"
+    },
+
+    {
+        "authGSSDecryptMessage",
+        authGSSDecryptMessage, METH_VARARGS,
+        "Decrypt a message"
     },
     {
         "authGSSClientInit",

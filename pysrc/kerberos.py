@@ -137,7 +137,21 @@ GSS_C_ANON_FLAG       = 64
 GSS_C_PROT_READY_FLAG = 128
 GSS_C_TRANS_FLAG      = 256
 
+def authGSSEncryptMessage(context, input):
+    """
+    
+    :param context: 
+    :param input: 
+    :return: 
+    """
 
+def authGSSDecryptMessage(context, input):
+    """
+    
+    :param context: 
+    :param input: 
+    :return: 
+    """
 
 def authGSSClientInit(service, **kwargs):
     """

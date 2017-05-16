@@ -89,3 +89,14 @@ int authenticate_gss_server_store_delegate(
 int authenticate_gss_server_has_delegated(
     gss_server_state *state
 );
+
+int encrypt_message(
+    gss_client_state *state, char *message_input,
+    char **encrypted_output, int *encrypted_output_length
+);
+
+int decrypt_message(
+    gss_client_state *state, char *encrypted_input,
+    int encrypted_length, char **decrypted_output,
+    int *decrypted_output_len
+);
