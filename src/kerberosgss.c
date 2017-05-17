@@ -1090,6 +1090,5 @@ int decrypt_message(
 
     ret = 0;
 end:
-    maj_stat = gss_release_iov_buffer(&min_stat, iov, 3);
     return ret;
 }

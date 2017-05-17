@@ -507,10 +507,10 @@ static PyObject* authGSSDecryptMessage(PyObject* self, PyObject* args)
     pyresult = Py_BuildValue("s#", dec_output, dec_output_len);
 end:
     if (header) {
-        PyMem_Free(header);
+        free(header);
     }
     if (enc_data) {
-        PyMem_Free(enc_data);
+        free(enc_data);
     }
     if (dec_output) {
         free(dec_output);
